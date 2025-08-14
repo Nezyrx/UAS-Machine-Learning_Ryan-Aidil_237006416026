@@ -1,0 +1,90 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# ----- 1. Memuat Data -----
+try:
+    df = pd.read_csv('forestfires.csv')
+    print("Dataset berhasil dimuat.")
+    print("Dimensi data: ", df.shape)
+    print("\nContoh data awal:")
+    print(df.head())
+except FileNotFoundError:
+    print("Error: Pastikan file 'forestfires.csv' berada di direktori yang sama dengan skrip ini.")
+    exit()
+
+# ----- 2. Pra-pemrosesan Data -----
+# Transformasi logaritmik pada target variabel 'area' untuk menormalkan distribusi
+# np.log1p(x) adalah log(x+1), ini berguna untuk menangani nilai area = 0
+df['area'] = np.log1p(df['area'])
+
+# Mengubah kolom kategorikal (bulan dan hari) menjadi numerik menggunakan one-hot encoding
+df_processed = pd.get_dummies(df, columns=['month', 'day'], drop_first=True)
+
+# Memisahkan fitur (X) dan target (y)
+X = df_processed.drop('area', axis=1)
+y = df_processed['area']
+
+# ----- 3. Pembagian Data Latih dan Uji -----
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+print(f"\nData dibagi menjadi: {X_train.shape[0]} data latih dan {X_test.shape[0]} data uji.")
+
+# ----- 4. Melatih Model Random Forest Regressor -----
+print("Melatih model Random Forest Regressor...")
+model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+model.fit(X_train, y_train)
+print("Model selesai dilatih.")
+
+# ----- 5. Evaluasi Model -----
+print("\nMengevaluasi performa model pada data uji...")
+y_pred_log = model.predict(X_test)
+
+# Mengembalikan prediksi ke skala semula dengan eksponensial (kebalikan dari log)
+y_pred_original = np.expm1(y_pred_log)
+y_test_original = np.expm1(y_test)
+
+# Hitung metrik evaluasi
+mae = mean_absolute_error(y_test_original, y_pred_original)
+mse = mean_squared_error(y_test_original, y_pred_original)
+r2 = r2_score(y_test_original, y_pred_original)
+
+# ----- 6. Menampilkan Output Hasil -----
+output_text = f"""
+=======================================
+HASIL EVALUASI MODEL PREDIKSI
+=======================================
+- Mean Absolute Error (MAE) : {mae:.4f}
+- Mean Squared Error (MSE)  : {mse:.4f}
+- R-squared (R²)            : {r2:.4f}
+=======================================
+"""
+print(output_text)
+
+# ----- 7. Analisis Faktor Penting (Feature Importance) -----
+feature_importances = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+
+print("\n10 FAKTOR PALING BERPENGARUH:\n")
+print(feature_importances.head(10))
+
+# Menyimpan output ke file .txt
+with open("output_analisis.txt", "w") as f:
+    f.write(output_text)
+    f.write("\n10 FAKTOR PALING BERPENGARUH:\n\n")
+    f.write(feature_importances.head(10).to_string())
+
+
+# ----- 8. Visualisasi Hasil -----
+plt.figure(figsize=(10, 6))
+sns.scatterplot(x=y_test_original, y=y_pred_original, alpha=0.6)
+plt.plot([y_test_original.min(), y_test_original.max()], [y_test_original.min(), y_test_original.max()], '--r', linewidth=2)
+plt.title('Perbandingan Area Aktual vs. Area Prediksi')
+plt.xlabel('Area Aktual yang Terbakar (ha)')
+plt.ylabel('Area Prediksi yang Terbakar (ha)')
+plt.grid(True)
+plt.savefig("prediksi_vs_aktual.png")
+print("\nPlot visualisasi telah disimpan sebagai 'prediksi_vs_aktual.png'")
+plt.show()
